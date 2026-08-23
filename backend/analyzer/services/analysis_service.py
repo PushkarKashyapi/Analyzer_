@@ -10,27 +10,30 @@ class AnalysisService:
     Main orchestrator for the Social Media Content Analyzer.
 
     Flow:
-    1. OCR / PDF Text Extraction.
-    2. OpenCV Image Metrics.
-    3. Gemini Vision Analysis.
-    4. Deterministic Overall Score.
+    1. Extract text using Tesseract (or PDF parser).
+    2. Analyze image using OpenCV.
+    3. Analyze image + caption using Gemini.
+    4. Calculate deterministic overall score.
     """
 
     IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".webp"}
 
     @classmethod
     def process_document(cls, file_path: Path, filename: str):
-        # ----------------------------------------------------
-        # STEP 1 : Extract text
-        # ----------------------------------------------------
-        extracted_text = DocumentFactory.extract_text(file_path)
 
         # ----------------------------------------------------
-        # STEP 2 : Defaults
+        # STEP 1 : Extract text using Tesseract / PDF
+        # ----------------------------------------------------
+        try:
+            extracted_text = DocumentFactory.extract_text(file_path)
+        except Exception:
+            # Continue analysis even if OCR finds no text
+            extracted_text = ""
+
+        # ----------------------------------------------------
+        # STEP 2 : Default response values
         # ----------------------------------------------------
         image_analysis = {}
-        ai_result = {}
-
         platform = "Other"
         content_type = "Other"
         business_category = "None"
@@ -42,12 +45,14 @@ class AnalysisService:
         caption_analysis = {}
 
         # ----------------------------------------------------
-        # STEP 3 : Image Pipeline
+        # STEP 3 : IMAGE PIPELINE
         # ----------------------------------------------------
         if file_path.suffix.lower() in cls.IMAGE_TYPES:
 
+            # OpenCV Analysis
             image_analysis = ImageAnalysisService.analyze(file_path)
 
+            # Gemini Complete Analysis
             ai_result = AIService.analyze_complete_post(
                 image_path=str(file_path),
                 extracted_text=extracted_text,
@@ -65,7 +70,7 @@ class AnalysisService:
             caption_analysis = ai_result.get("caption_analysis", {})
 
         # ----------------------------------------------------
-        # STEP 4 : PDF/Text Pipeline
+        # STEP 4 : PDF / TEXT PIPELINE
         # ----------------------------------------------------
         else:
             caption_analysis = AIService.analyze_caption(
@@ -85,7 +90,7 @@ class AnalysisService:
         )
 
         # ----------------------------------------------------
-        # STEP 6 : Overall Grade
+        # STEP 6 : Grade
         # ----------------------------------------------------
         if overall_score >= 90:
             grade = "Excellent"
@@ -97,39 +102,33 @@ class AnalysisService:
             grade = "Needs Improvement"
 
         # ----------------------------------------------------
-        # STEP 7 : Final API Response
+        # STEP 7 : Final Response
         # ----------------------------------------------------
         return {
             "filename": filename,
 
-            # Classification
             "platform": platform,
             "content_type": content_type,
             "business_category": business_category,
             "target_audience": target_audience,
             "post_goal": post_goal,
 
-            # Final Rating
             "overall_score": overall_score,
             "overall_grade": grade,
 
-            # OCR Information
             "characters": len(extracted_text),
             "words": len(extracted_text.split()),
             "extracted_text": extracted_text,
 
-            # Image Metrics (OpenCV)
             "image_analysis": image_analysis,
-
-            # AI Results
             "marketing_analysis": marketing_analysis,
             "personal_analysis": personal_analysis,
             "caption_analysis": caption_analysis,
         }
 
-    # =========================================================
+    # ========================================================
     # Deterministic Overall Score
-    # =========================================================
+    # ========================================================
 
     @staticmethod
     def calculate_overall_score(
@@ -138,10 +137,6 @@ class AnalysisService:
         personal_analysis,
         caption_analysis,
     ):
-        """
-        Overall score is calculated in Python instead of Gemini.
-        This keeps scoring consistent across requests.
-        """
 
         # ---------------- Caption Score ----------------
         caption_score = (
@@ -154,7 +149,7 @@ class AnalysisService:
             + caption_analysis.get("hashtag_score", 0) * 0.05
         )
 
-        # ---------------- Common Visual Score ----------------
+        # ---------------- Visual Score ----------------
         visual_score = (
             image_metrics.get("brightness_score", 0)
             + image_metrics.get("contrast_score", 0)
@@ -164,9 +159,9 @@ class AnalysisService:
         ) / 5
 
         # =====================================================
-        # MARKETING / BUSINESS POSTS
+        # MARKETING / BUSINESS POST
         # =====================================================
-        if marketing_analysis:
+        if marketing_analysis is not None:
 
             business_score = (
                 marketing_analysis.get("business_score", 0) * 0.30
@@ -187,9 +182,9 @@ class AnalysisService:
             return min(round(score), 100)
 
         # =====================================================
-        # SELFIE / PERSONAL / TRAVEL POSTS
+        # SELFIE / PERSONAL / TRAVEL POST
         # =====================================================
-        if personal_analysis:
+        if personal_analysis is not None:
 
             photo_score = (
                 personal_analysis.get("photo_score", 0) * 0.25
