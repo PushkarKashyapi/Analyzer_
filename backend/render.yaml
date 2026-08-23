@@ -1,12 +1,24 @@
 services:
   - type: web
     name: social-media-analyzer-backend
-    env: python
+    runtime: docker
     plan: free
 
-    buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: gunicorn config.wsgi:application
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
 
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.10
+
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings
+
+      - key: DEBUG
+        value: "False"
+
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: SECRET_KEY
+        sync: false
