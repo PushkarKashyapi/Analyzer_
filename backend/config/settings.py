@@ -30,14 +30,8 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-# =============================================================================
-# Allowed Hosts (Render + Local)
-# =============================================================================
-
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "localhost",
-]
+# Allow all hosts
+ALLOWED_HOSTS = ["*"]
 
 render_hosts = os.getenv("ALLOWED_HOSTS", "")
 
