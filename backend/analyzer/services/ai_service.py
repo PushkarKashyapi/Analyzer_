@@ -10,16 +10,22 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("GEMINI_API_KEY not found in environment variables.")
+
+genai.configure(api_key=api_key)
 
 
 class AIService:
     """
-    Handles all Gemini AI operations:
-    1. Detect content type.
-    2. Analyze marketing posters.
-    3. Analyze personal/selfie/travel images.
-    4. Analyze captions.
+    Handles all Gemini AI operations.
+
+    1. OCR fallback (Gemini Vision)
+    2. Detect content type.
+    3. Analyze marketing posters.
+    4. Analyze personal/selfie/travel images.
+    5. Analyze captions.
     """
 
     model = genai.GenerativeModel("gemini-3.6-flash")
@@ -37,6 +43,37 @@ class AIService:
         )
 
         return json.loads(cleaned)
+
+    # ---------------------------------------------------------
+    # OCR FALLBACK USING GEMINI VISION (NEW)
+    # ---------------------------------------------------------
+
+    @classmethod
+    def extract_text_from_image(cls, image_path: str):
+        """
+        Used only when Tesseract is unavailable (Render deployment).
+        Extracts visible text using Gemini Vision.
+        """
+
+        image = Image.open(image_path)
+
+        prompt = """
+Extract every piece of visible text from this image.
+
+Rules:
+- Return plain text only.
+- Preserve headings and line breaks.
+- Do not explain anything.
+- If no text exists, return an empty string.
+"""
+
+        try:
+            response = cls.model.generate_content([prompt, image])
+            return response.text.strip()
+
+        except Exception as error:
+            logger.exception(error)
+            return ""
 
     # ---------------------------------------------------------
     # STEP 1 : Detect Content Type
@@ -90,7 +127,6 @@ None
 
         try:
             response = cls.model.generate_content([prompt, image])
-
             return cls._parse_json(response.text)
 
         except Exception as error:
@@ -152,7 +188,6 @@ Return ONLY JSON.
 
         try:
             response = cls.model.generate_content([prompt, image])
-
             return cls._parse_json(response.text)
 
         except Exception as error:
@@ -196,7 +231,6 @@ Caption:
 Analyze this image ONLY as a personal/social media photo.
 
 Focus on:
-
 - Eye catchiness.
 - Composition.
 - Color harmony.
@@ -222,7 +256,6 @@ Return ONLY JSON.
 
         try:
             response = cls.model.generate_content([prompt, image])
-
             return cls._parse_json(response.text)
 
         except Exception as error:
@@ -240,7 +273,7 @@ Return ONLY JSON.
             }
 
     # ---------------------------------------------------------
-    # STEP 3 : Caption Analysis (Runs for EVERY Upload)
+    # STEP 3 : Caption Analysis
     # ---------------------------------------------------------
 
     @classmethod
@@ -286,7 +319,6 @@ Return ONLY JSON.
 
         try:
             response = cls.model.generate_content(prompt)
-
             return cls._parse_json(response.text)
 
         except Exception as error:
