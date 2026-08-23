@@ -10,78 +10,61 @@ class AnalysisService:
     Main orchestrator for the Social Media Content Analyzer.
     """
 
-    IMAGE_TYPES = {".png", ".jpg", ".jpeg"}
+    IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".webp"}
 
     @classmethod
     def process_document(cls, file_path: Path, filename: str) -> dict:
         # ----------------------------------------------------
-        # STEP 1 : Extract text (OCR or PDF)
+        # STEP 1 : Extract text (PDF / OCR / Gemini OCR fallback)
         # ----------------------------------------------------
         extracted_text = DocumentFactory.extract_text(file_path)
 
         # ----------------------------------------------------
-        # STEP 2 : Initialize response
+        # STEP 2 : Default values
         # ----------------------------------------------------
         image_analysis = {}
+        content_type = "Other"
+        business_category = "None"
         marketing_analysis = None
         personal_analysis = None
-        content_info = {
-            "content_type": "Other",
-            "business_category": "None"
-        }
+        caption_analysis = {}
 
         # ----------------------------------------------------
-        # STEP 3 : Run image pipeline (only for images)
+        # STEP 3 : Image Pipeline
         # ----------------------------------------------------
         if file_path.suffix.lower() in cls.IMAGE_TYPES:
 
             # OpenCV metrics
             image_analysis = ImageAnalysisService.analyze(file_path)
 
-            # Detect image type
-            content_info = AIService.detect_content_type(str(file_path))
+            # -------- SINGLE GEMINI CALL --------
+            ai_result = AIService.analyze_complete_post(
+                image_path=str(file_path),
+                extracted_text=extracted_text,
+                image_metrics=image_analysis,
+            )
 
-            content_type = content_info.get("content_type", "Other")
-            business_category = content_info.get("business_category", "None")
+            content_type = ai_result.get("content_type", "Other")
+            business_category = ai_result.get("business_category", "None")
 
-            # ---------------- Marketing Pipeline ----------------
-            if content_type in [
-                "Marketing Poster",
-                "Product Promotion",
-                "Educational Post",
-                "Event Announcement",
-            ]:
-
-                marketing_analysis = AIService.analyze_marketing_image(
-                    image_path=str(file_path),
-                    caption_text=extracted_text,
-                    image_metrics=image_analysis,
-                    business_category=business_category,
-                )
-
-            # ---------------- Personal Pipeline -----------------
-            else:
-
-                personal_analysis = AIService.analyze_personal_image(
-                    image_path=str(file_path),
-                    caption_text=extracted_text,
-                    image_metrics=image_analysis,
-                )
+            marketing_analysis = ai_result.get("marketing_analysis")
+            personal_analysis = ai_result.get("personal_analysis")
+            caption_analysis = ai_result.get("caption_analysis", {})
 
         # ----------------------------------------------------
-        # STEP 4 : Caption analysis (runs for every upload)
+        # STEP 4 : PDF/Text Pipeline
         # ----------------------------------------------------
-        caption_analysis = AIService.analyze_caption(
-            caption_text=extracted_text,
-            content_type=content_info.get("content_type", "Other"),
-            business_category=content_info.get("business_category", "None"),
-        )
+        else:
+            caption_analysis = AIService.analyze_caption(
+                caption_text=extracted_text,
+                content_type="PDF",
+                business_category="None",
+            )
 
         # ----------------------------------------------------
-        # STEP 5 : Calculate Overall Score
+        # STEP 5 : Overall Score
         # ----------------------------------------------------
         overall_score = cls.calculate_overall_score(
-            content_type=content_info.get("content_type", "Other"),
             image_metrics=image_analysis,
             marketing_analysis=marketing_analysis,
             personal_analysis=personal_analysis,
@@ -94,8 +77,8 @@ class AnalysisService:
         return {
             "filename": filename,
 
-            "content_type": content_info.get("content_type"),
-            "business_category": content_info.get("business_category"),
+            "content_type": content_type,
+            "business_category": business_category,
 
             "overall_score": overall_score,
 
@@ -104,46 +87,43 @@ class AnalysisService:
             "extracted_text": extracted_text,
 
             "image_analysis": image_analysis,
-
             "marketing_analysis": marketing_analysis,
-
             "personal_analysis": personal_analysis,
-
             "caption_analysis": caption_analysis,
         }
 
     # ========================================================
-    # Overall Score Logic
+    # Overall Score Calculation (Deterministic)
     # ========================================================
 
     @staticmethod
     def calculate_overall_score(
-        content_type,
         image_metrics,
         marketing_analysis,
         personal_analysis,
         caption_analysis,
     ):
         """
-        Overall score is deterministic (not AI generated).
+        Overall score is calculated in Python (not AI generated).
         """
 
-        # -------- Marketing Posters --------
-        if marketing_analysis is not None:
+        caption_score = (
+            caption_analysis.get("engagement_score", 0)
+            + caption_analysis.get("catchiness_score", 0)
+            + caption_analysis.get("readability_score", 0)
+        ) / 3
+
+        # -------- Marketing Posts --------
+        if marketing_analysis:
 
             business_score = marketing_analysis.get("business_score", 0)
-
-            caption_score = (
-                caption_analysis.get("engagement_score", 0)
-                + caption_analysis.get("catchiness_score", 0)
-                + caption_analysis.get("readability_score", 0)
-            ) / 3
 
             visual_score = (
                 image_metrics.get("brightness_score", 0)
                 + image_metrics.get("contrast_score", 0)
                 + image_metrics.get("color_harmony_score", 0)
-            ) / 3
+                + image_metrics.get("sharpness_score", 0)
+            ) / 4
 
             score = (
                 business_score * 0.40
@@ -154,28 +134,24 @@ class AnalysisService:
             return round(score)
 
         # -------- Personal / Selfie / Travel --------
-        if personal_analysis is not None:
+        if personal_analysis:
 
             photo_score = personal_analysis.get("photo_score", 0)
 
-            caption_score = (
-                caption_analysis.get("engagement_score", 0)
-                + caption_analysis.get("catchiness_score", 0)
-                + caption_analysis.get("readability_score", 0)
-            ) / 3
+            visual_score = (
+                image_metrics.get("brightness_score", 0)
+                + image_metrics.get("contrast_score", 0)
+                + image_metrics.get("sharpness_score", 0)
+                + image_metrics.get("color_harmony_score", 0)
+            ) / 4
 
             score = (
-                photo_score * 0.60
-                + caption_score * 0.40
+                photo_score * 0.50
+                + visual_score * 0.20
+                + caption_score * 0.30
             )
 
             return round(score)
 
         # -------- PDF / Text Only --------
-        caption_score = (
-            caption_analysis.get("engagement_score", 0)
-            + caption_analysis.get("catchiness_score", 0)
-            + caption_analysis.get("readability_score", 0)
-        ) / 3
-
         return round(caption_score)
