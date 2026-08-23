@@ -3,6 +3,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytesseract
+from pytesseract import TesseractNotFoundError
 from sklearn.cluster import KMeans
 
 
@@ -61,41 +62,29 @@ class ImageAnalysisService:
     @staticmethod
     def get_sharpness(image):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
         variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-
         score = min((variance / 500) * 100, 100)
-
         return round(score)
 
     @staticmethod
     def get_saturation(image):
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
         saturation = np.mean(hsv[:, :, 1])
-
         return round((saturation / 255) * 100)
 
     @staticmethod
     def get_exposure(image):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
         mean = np.mean(gray)
-
         score = 100 - abs(mean - 128) / 128 * 100
-
         return round(max(score, 0))
 
     @staticmethod
     def get_noise(image):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
         noise = np.mean(cv2.absdiff(gray, blurred))
-
         score = 100 - min(noise * 4, 100)
-
         return round(max(score, 0))
 
     # ==========================================================
@@ -105,13 +94,12 @@ class ImageAnalysisService:
     @staticmethod
     def get_dominant_colors(image, clusters=3):
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
         pixels = rgb.reshape((-1, 3))
 
         model = KMeans(
             n_clusters=clusters,
             random_state=42,
-            n_init=10,
+            n_init="auto",
         )
 
         model.fit(pixels)
@@ -131,11 +119,6 @@ class ImageAnalysisService:
 
     @staticmethod
     def get_color_harmony(image):
-        """
-        Measures harmony using HSV color spread.
-        Lower hue variance = better harmony.
-        """
-
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         hue = hsv[:, :, 0].flatten()
@@ -148,18 +131,12 @@ class ImageAnalysisService:
             return 50
 
         variance = np.std(hue)
-
         score = 100 - min(variance, 100)
 
         return round(score)
 
     @staticmethod
     def get_color_balance(image):
-        """
-        Checks whether RGB channels are balanced.
-        Useful for selfies and photography.
-        """
-
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         red_mean = np.mean(rgb[:, :, 0])
@@ -167,7 +144,6 @@ class ImageAnalysisService:
         blue_mean = np.mean(rgb[:, :, 2])
 
         difference = np.std([red_mean, green_mean, blue_mean])
-
         score = 100 - min(difference, 100)
 
         return round(score)
@@ -181,7 +157,6 @@ class ImageAnalysisService:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         white_pixels = np.sum(gray > 240)
-
         total_pixels = gray.shape[0] * gray.shape[1]
 
         whitespace = (white_pixels / total_pixels) * 100
@@ -190,33 +165,54 @@ class ImageAnalysisService:
 
     @staticmethod
     def get_text_density(image):
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        """
+        Uses Tesseract locally.
+        On Render (where Tesseract is unavailable), returns a safe fallback.
+        """
 
-        data = pytesseract.image_to_data(
-            rgb,
-            output_type=pytesseract.Output.DICT,
-        )
+        try:
+            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        occupied_area = 0
-        words = 0
+            data = pytesseract.image_to_data(
+                rgb,
+                output_type=pytesseract.Output.DICT,
+            )
 
-        for i, text in enumerate(data["text"]):
-            if text.strip():
-                words += 1
+            occupied_area = 0
+            words = 0
 
-                occupied_area += (
-                    data["width"][i] *
-                    data["height"][i]
-                )
+            for i, text in enumerate(data["text"]):
+                if text.strip():
+                    words += 1
+                    occupied_area += (
+                        data["width"][i] *
+                        data["height"][i]
+                    )
 
-        total_area = image.shape[0] * image.shape[1]
+            total_area = image.shape[0] * image.shape[1]
+            density = (occupied_area / total_area) * 100
+            score = max(0, 100 - density)
 
-        density = (occupied_area / total_area) * 100
+            return {
+                "words_detected": words,
+                "density_percentage": round(density, 2),
+                "score": round(score),
+            }
 
-        score = max(0, 100 - density)
+        except TesseractNotFoundError:
+            print("⚠️ Tesseract not available. Skipping text density analysis.")
 
-        return {
-            "words_detected": words,
-            "density_percentage": round(density, 2),
-            "score": round(score),
-        }
+            return {
+                "words_detected": 0,
+                "density_percentage": 0,
+                "score": 50,
+            }
+
+        except Exception as error:
+            print(f"Text Density Error: {error}")
+
+            return {
+                "words_detected": 0,
+                "density_percentage": 0,
+                "score": 50,
+            }
