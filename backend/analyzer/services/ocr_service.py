@@ -3,57 +3,44 @@ from pathlib import Path
 
 import cv2
 import pytesseract
+from PIL import Image
+from pytesseract import TesseractNotFoundError
+
+# Windows Local Path
+if os.name == "nt":
+    pytesseract.pytesseract.tesseract_cmd = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
 
 
 class OCRService:
-    """
-    Handles OCR extraction using Tesseract.
-    Works on Windows (local) and Linux (Render).
-    """
-
-    # Configure Tesseract path automatically
-    if os.name == "nt":
-        pytesseract.pytesseract.tesseract_cmd = (
-            r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        )
-
     @classmethod
     def extract_text(cls, file_path: Path) -> str:
-        image = cv2.imread(str(file_path))
-
-        if image is None:
-            raise ValueError("Unable to read image for OCR.")
-
-        processed_image = cls.preprocess_image(image)
-
-        text = pytesseract.image_to_string(
-            processed_image,
-            lang="eng",
-            config="--oem 3 --psm 6"
-        )
-
-        return text.strip()
-
-    @staticmethod
-    def preprocess_image(image):
         """
-        Improve OCR accuracy before sending image to Tesseract.
+        Extract text using Tesseract.
+        If Tesseract is unavailable (Render), return empty string.
         """
 
-        # Convert to grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        try:
+            image = cv2.imread(str(file_path))
 
-        # Remove noise
-        gray = cv2.medianBlur(gray, 3)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Adaptive threshold
-        threshold = cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            11,
-            2,
-        )
+            processed = cv2.threshold(
+                gray, 0, 255,
+                cv2.THRESH_BINARY + cv2.THRESH_OTSU
+            )[1]
 
-        return threshold
+            return pytesseract.image_to_string(
+                processed,
+                lang="eng",
+                config="--oem 3 --psm 6"
+            )
+
+        except TesseractNotFoundError:
+            print("⚠️ Tesseract not available. Skipping OCR.")
+            return ""
+
+        except Exception as e:
+            print("OCR Error:", e)
+            return ""
