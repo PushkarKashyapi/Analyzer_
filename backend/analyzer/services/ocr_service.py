@@ -3,44 +3,90 @@ from pathlib import Path
 
 import cv2
 import pytesseract
-from PIL import Image
 from pytesseract import TesseractNotFoundError
 
-# Windows Local Path
+
+# ----------------------------------------------------------
+# Configure Tesseract Path
+# ----------------------------------------------------------
+
 if os.name == "nt":
+    # Windows Local Development
     pytesseract.pytesseract.tesseract_cmd = (
         r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     )
+else:
+    # Linux / Docker / Render
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
 class OCRService:
+    """
+    OCR Service using Tesseract OCR.
+
+    Works on:
+    - Windows (Local)
+    - Docker / Render (Linux)
+    """
+
     @classmethod
     def extract_text(cls, file_path: Path) -> str:
         """
-        Extract text using Tesseract.
-        If Tesseract is unavailable (Render), return empty string.
+        Extract text from an image using Tesseract OCR.
         """
 
         try:
             image = cv2.imread(str(file_path))
 
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            if image is None:
+                raise ValueError("Unable to read image for OCR.")
 
-            processed = cv2.threshold(
-                gray, 0, 255,
-                cv2.THRESH_BINARY + cv2.THRESH_OTSU
-            )[1]
+            processed_image = cls.preprocess_image(image)
 
-            return pytesseract.image_to_string(
-                processed,
+            text = pytesseract.image_to_string(
+                processed_image,
                 lang="eng",
-                config="--oem 3 --psm 6"
+                config="--oem 3 --psm 6",
             )
 
-        except TesseractNotFoundError:
-            print("⚠️ Tesseract not available. Skipping OCR.")
-            return ""
+            return text.strip()
 
-        except Exception as e:
-            print("OCR Error:", e)
-            return ""
+        except TesseractNotFoundError:
+            raise RuntimeError(
+                "Tesseract OCR is not installed or not found at the configured path."
+            )
+
+        except Exception as error:
+            raise RuntimeError(f"OCR processing failed: {error}")
+
+    # ----------------------------------------------------------
+    # Image Preprocessing
+    # ----------------------------------------------------------
+
+    @staticmethod
+    def preprocess_image(image):
+        """
+        Improve image quality before OCR.
+        """
+
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        # Remove noise while preserving edges
+        gray = cv2.bilateralFilter(gray, 9, 75, 75)
+
+        # Increase contrast
+        gray = cv2.equalizeHist(gray)
+
+        # Binary threshold for cleaner text
+        threshold = cv2.threshold(
+            gray,
+            0,
+            255,
+            cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+        )[1]
+
+        # Small morphological cleanup
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        cleaned = cv2.morphologyEx(threshold, cv2.MORPH_OPEN, kernel)
+
+        return cleaned
