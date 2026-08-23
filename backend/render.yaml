@@ -2,17 +2,11 @@ services:
   - type: web
     name: social-media-analyzer-backend
     env: python
-
-    buildCommand: |
-      apt-get update
-      apt-get install -y tesseract-ocr
-      chmod +x build.sh
-      ./build.sh
-
-    startCommand: gunicorn config.wsgi:application
-
     plan: free
+
+    buildCommand: chmod +x build.sh && ./build.sh
+    startCommand: gunicorn config.wsgi:application
 
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.13
+        value: 3.11.10
