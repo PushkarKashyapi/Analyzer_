@@ -1,6 +1,11 @@
 """
 Django settings for Social Media Content Analyzer.
-Production-ready settings for Render + Docker deployment.
+
+Production Ready
+- Render + Docker
+- React (Vite Frontend)
+- WhiteNoise
+- CORS Enabled
 """
 
 import os
@@ -8,19 +13,19 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # =============================================================================
-# Base Directory
+# BASE DIRECTORY
 # =============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # =============================================================================
-# Environment Variables
+# LOAD ENV VARIABLES
 # =============================================================================
 
 load_dotenv(BASE_DIR / ".env")
 
 # =============================================================================
-# Security
+# SECURITY
 # =============================================================================
 
 SECRET_KEY = os.getenv(
@@ -30,24 +35,15 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-# Allow all hosts
+# Allow Render + Localhost
 ALLOWED_HOSTS = ["*"]
 
-render_hosts = os.getenv("ALLOWED_HOSTS", "")
-
-if render_hosts:
-    ALLOWED_HOSTS += [
-        host.strip()
-        for host in render_hosts.split(",")
-        if host.strip()
-    ]
-
 # =============================================================================
-# Installed Applications
+# INSTALLED APPS
 # =============================================================================
 
 INSTALLED_APPS = [
-    # Django Apps
+    # Django
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -59,20 +55,23 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
 
-    # Local Apps
+    # Local
     "analyzer",
 ]
 
 # =============================================================================
-# Middleware
+# MIDDLEWARE
 # =============================================================================
 
 MIDDLEWARE = [
+    # CORS MUST BE FIRST
+    "corsheaders.middleware.CorsMiddleware",
+
+    # Security
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
 
-    "corsheaders.middleware.CorsMiddleware",
-
+    # Django
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -82,14 +81,15 @@ MIDDLEWARE = [
 ]
 
 # =============================================================================
-# URL Configuration
+# URL CONFIGURATION
 # =============================================================================
 
 ROOT_URLCONF = "config.urls"
+
 WSGI_APPLICATION = "config.wsgi.application"
 
 # =============================================================================
-# Templates
+# TEMPLATES
 # =============================================================================
 
 TEMPLATES = [
@@ -108,7 +108,7 @@ TEMPLATES = [
 ]
 
 # =============================================================================
-# Database
+# DATABASE (SQLite)
 # =============================================================================
 
 DATABASES = {
@@ -119,7 +119,7 @@ DATABASES = {
 }
 
 # =============================================================================
-# Password Validation
+# PASSWORD VALIDATION
 # =============================================================================
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -138,7 +138,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # =============================================================================
-# Internationalization
+# INTERNATIONALIZATION
 # =============================================================================
 
 LANGUAGE_CODE = "en-us"
@@ -149,7 +149,7 @@ USE_I18N = True
 USE_TZ = True
 
 # =============================================================================
-# Static Files (WhiteNoise)
+# STATIC FILES (WhiteNoise)
 # =============================================================================
 
 STATIC_URL = "/static/"
@@ -160,30 +160,51 @@ STATICFILES_STORAGE = (
 )
 
 # =============================================================================
-# Media Files
+# MEDIA FILES
 # =============================================================================
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 # =============================================================================
-# CORS (React Frontend)
+# CORS CONFIGURATION
 # =============================================================================
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+# Allow React locally and deployed frontend
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://analyzer-1-272f.onrender.com",
+]
 
-if cors_origins:
-    CORS_ALLOWED_ORIGINS = [
-        origin.strip()
-        for origin in cors_origins.split(",")
-        if origin.strip()
-    ]
+CORS_ALLOW_HEADERS = [
+    "*",
+]
+
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
 
 # =============================================================================
-# Django REST Framework
+# CSRF TRUSTED ORIGINS
+# =============================================================================
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://analyzer-1-272f.onrender.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# =============================================================================
+# DJANGO REST FRAMEWORK
 # =============================================================================
 
 REST_FRAMEWORK = {
@@ -198,20 +219,33 @@ REST_FRAMEWORK = {
 }
 
 # =============================================================================
-# Gemini AI
+# GEMINI AI
 # =============================================================================
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # =============================================================================
-# MongoDB (Optional)
+# MONGODB (OPTIONAL)
 # =============================================================================
 
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
 
 # =============================================================================
-# Default Primary Key
+# DEFAULT PRIMARY KEY
 # =============================================================================
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# =============================================================================
+# RENDER / DOCKER SECURITY SETTINGS
+# =============================================================================
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+USE_X_FORWARDED_HOST = True
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
+SECURE_SSL_REDIRECT = False
